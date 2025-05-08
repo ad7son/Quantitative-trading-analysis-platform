@@ -11,6 +11,7 @@ class DMACParams:
         fast_period (int): 快速移動平均線週期
         slow_period (int): 慢速移動平均線週期
     """
+    ma_type: str = "EMA" 
     fast_period: int = 5
     slow_period: int = 20
 
@@ -35,6 +36,18 @@ class DMACStrategy:
         """
         self.params = params or DMACParams()
     
+    # def create_ma(self, data: pd.DataFrame) -> pd.Series:
+    #     # 建立 SMA 線
+    #     if self.params.ma_type == "SMA":
+    #         return data['close'].rolling(window=self.params.period).mean()
+    #     # 建立 EMA 線
+    #     elif self.params.ma_type == "EMA":
+    #         return data['close'].ewm(span=self.params.period, adjust=False).mean()
+    #     # 建立 WMA 線
+    #     elif self.params.ma_type == "WMA":
+    #         weights = np.arange(1, self.params.period + 1)
+    #         return data['close'].rolling(self.params.period).apply(lambda prices: np.dot(prices, weights)/weights.sum(), raw=True)
+    
     def calculate_signals(self, data: pd.DataFrame) -> pd.Series:
         """
         計算交易信號
@@ -53,9 +66,25 @@ class DMACStrategy:
             raise ValueError("數據必須包含 'close' 列")
         
         # 計算移動平均線
-        fast_ma = data['close'].rolling(window=self.params.fast_period).mean()
-        slow_ma = data['close'].rolling(window=self.params.slow_period).mean()
-        
+        # 建立 SMA 線
+        if self.params.ma_type == "SMA":
+            # return data['close'].rolling(window=self.params.period).mean()
+            fast_ma = data['close'].rolling(window=self.params.fast_period).mean()
+            slow_ma = data['close'].rolling(window=self.params.slow_period).mean()
+        # 建立 EMA 線
+        elif self.params.ma_type == "EMA":
+            # return data['close'].ewm(span=self.params.period, adjust=False).mean()
+            fast_ma = data['close'].ewm(span=self.params.fast_period, adjust=False).mean()
+            slow_ma = data['close'].ewm(span=self.params.slow_period, adjust=False).mean()
+        # 建立 WMA 線
+        elif self.params.ma_type == "WMA":
+            # weights = np.arange(1, self.params.period + 1)
+            # return data['close'].rolling(self.params.period).apply(lambda prices: np.dot(prices, weights)/weights.sum(), raw=True)
+            fast_weights = np.arange(1, self.params.fast_period + 1)
+            slow_weights = np.arange(1, self.params.slow_period + 1)
+            fast_ma = data['close'].rolling(self.params.fast_period).apply(lambda prices: np.dot(prices, fast_weights)/fast_weights.sum(), raw=True)
+            slow_ma = data['close'].rolling(self.params.slow_period).apply(lambda prices: np.dot(prices, slow_weights)/slow_weights.sum(), raw=True)
+
         # 計算交叉信號
         signals = pd.Series(0, index=data.index)
         

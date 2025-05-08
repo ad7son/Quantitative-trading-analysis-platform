@@ -221,8 +221,12 @@ class ResultExporter:
         """
         # 價格和移動平均線圖
         plt.figure(figsize=(15, 6))
-        data['close'].plot(label='收盤價')
-        data['close'].rolling(window=strategy_params.period).mean().plot(label='5日 SMA')
+        # data['close'].rolling(window=strategy_params.period).mean().plot(label='5日 SMA')
+        data['close'].plot(label='收盤價', color='green')
+        fast_ma = data['close'].rolling(window=strategy_params.fast_period).mean()
+        slow_ma = data['close'].rolling(window=strategy_params.slow_period).mean()
+        fast_ma.plot(label=f'{strategy_params.fast_period}日 快線', color='blue')
+        slow_ma.plot(label=f'{strategy_params.slow_period}日 慢線', color='red')
         plt.title('價格和移動平均線')
         plt.legend()
         plt.savefig(f'{self.output_dir}/價格和移動平均線.png')
