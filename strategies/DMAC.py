@@ -8,6 +8,7 @@ class DMACParams:
     """移動平均線交叉策略參數
     
     Attributes:
+        ma_type (str): 平均線類型
         fast_period (int): 快速移動平均線週期
         slow_period (int): 慢速移動平均線週期
     """
