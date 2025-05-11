@@ -15,46 +15,46 @@ STOCK = ["1101", "1216", "1301", "1303", "2002", "2207", "2301", "2303", "2308",
          "3661", "3711", "4904", "4938", "5871", "5876", "5880", "6446", "6505", "6669"
 ]
 
-MA_TYPE = ["SMA"]
+MA_TYPE = ["EMA"]
 STRATEGY = "SMAS"
-SETTING = ["SMA_02", "SMA_03", "SMA_04", "SMA_05"]
+SETTING = ["EMA_01"]
 MA_PERIOD = {
-    "SMA_01": [150, 200],
-    "SMA_02": [50, 100],
-    "SMA_03": [20, 34, 50],
-    "SMA_04": [10, 20, 30],
-    "SMA_05": [5, 8, 13]
+    "EMA_01": [150, 200],
+    "EMA_02": [50, 100],
+    "EMA_03": [20, 34, 50],
+    "EMA_04": [10, 20, 30],
+    "EMA_05": [5, 8, 13]
 }
 SLOPE_PERIOD = {
-    "SMA_01": [20, 26],
-    "SMA_02": [10, 20],
-    "SMA_03": [5, 10, 14],
-    "SMA_04": [5, 7, 10],
-    "SMA_05": [3, 5]
+    "EMA_01": [20, 26],
+    "EMA_02": [10, 20],
+    "EMA_03": [5, 10, 14],
+    "EMA_04": [5, 7, 10],
+    "EMA_05": [3, 5]
 }
 METHOD = {
-    "SMA_01": ["M1", "M2"],
-    "SMA_02": ["M2"],
-    "SMA_03": ["M2"],
-    "SMA_04": ["M2", "M3"],
-    "SMA_05": ["M1", "M2", "M4"]
+    "EMA_01": ["M1", "M2"],
+    "EMA_02": ["M2"],
+    "EMA_03": ["M2"],
+    "EMA_04": ["M2", "M3"],
+    "EMA_05": ["M1", "M2", "M4"]
 }
 THRESHOLD = {
-    "SMA_01": {
+    "EMA_01": {
         "M1": [0.0], 
         "M2": [0.0, 0.1, 0.25]
     },
-    "SMA_02": {
+    "EMA_02": {
         "M2": [0.0, 0.1, 0.2]
     },
-    "SMA_03": {
+    "EMA_03": {
         "M2": [0.0, 0.07, 0.15]
     },
-    "SMA_04": {
+    "EMA_04": {
         "M2": [0.0, 0.05, 0.1], 
         "M3": [0.3, 0.4, 0.5]
     },
-    "SMA_05": {
+    "EMA_05": {
         "M1": [0.0], 
         "M2": [0.001, 0.003, 0.005], 
         "M4": [0.0]
@@ -80,12 +80,12 @@ def main():
                                 tqdm.write(f"正在回測 {STRATEGY} 股票:{stock}, 週期:{ma_period} 斜率區間:{slope_period} 方法:{method} 門檻:{threshold}")
 
                                 # 設定輸出路徑
-                                mode = f"1D{str(ma_period)}D{str(slope_period)}D{str(method)}T{str(index)}"
+                                mode = f"1M{str(ma_period)}M{str(slope_period)}M{str(method)}T{str(index)}"
                                 single_output_path = f"output/{STRATEGY}/{setting}/{stock}/{mode}/"
                                 all_output_path = f"output/{STRATEGY}/{setting}/ETF0050_{STRATEGY}_{setting}.xlsx"
                                 
                                 # 設定K 線參數
-                                freq = "D"
+                                freq = "min"
                                 kline = KLineGenerator(
                                     stock_id=stock, 
                                     timeframe=1,

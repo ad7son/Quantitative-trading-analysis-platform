@@ -5,16 +5,10 @@ import seaborn as sns
 import numpy as np
 from typing import Dict, Any
 from openpyxl import load_workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 
 # 設定中文字體
 plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 微軟正黑體
 plt.rcParams['axes.unicode_minus'] = False  # 用來正常顯示負號
-
-# 設定圖表樣式
-plt.style.use('seaborn')
-sns.set_palette("husl")
 
 class ResultExporter:
     """回測結果匯出器
@@ -36,18 +30,6 @@ class ResultExporter:
         """
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
-        
-        # 設定Excel樣式
-        self.header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
-        self.header_font = Font(name='Microsoft JhengHei', color='FFFFFF', bold=True)
-        self.cell_font = Font(name='Microsoft JhengHei')
-        self.border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-        self.alignment = Alignment(horizontal='center', vertical='center')
     
     def _translate_column_names(self, df: pd.DataFrame, file_type: str) -> pd.DataFrame:
         """
@@ -296,103 +278,125 @@ class ResultExporter:
         plt.savefig(f'{self.output_dir}/權益曲線和回撤圖.png')
         plt.close()
 
-    def _apply_excel_styling(self, worksheet):
-        """應用Excel樣式"""
-        for row in worksheet.iter_rows():
-            for cell in row:
-                cell.font = self.cell_font
-                cell.border = self.border
-                cell.alignment = self.alignment
+    def export_all(self, data: pd.DataFrame, results: Dict[str, Any], 
+                  all_stats: Dict[str, Any], strategy_params) -> pd.DataFrame:
+        """
+        匯出個別股票的所有結果
+        
+        Parameters:
+        -----------
+        data : pd.DataFrame
+            原始數據
+        results : dict
+            回測結果
+        all_stats : dict
+            所有統計數據
+        strategy_params
+            策略參數
+        """
+        stats_df = self.save_statistics(all_stats)
+        self.plot_results(data, results, all_stats, strategy_params)
+
+        # 從輸出路徑中提取股票代碼
+        stock_id = self.output_dir.split('/')[-3]  # output/SMAC/2330/1D5D/ -> 2330
+        
+        # 將 DataFrame 的列名改為股票代碼
+        stats_df.columns = [stock_id]
+
+        return stats_df 
+
+    def write_df_to_excel(self, file_path: str, sheet_name: str, df: pd.DataFrame):
+        """
+        將 DataFrame 寫入 Excel 文件
+        
+        Parameters:
+        -----------
+        file_path : str
+            Excel 文件路徑
+        sheet_name : str
+            工作表名稱
+        df : pd.DataFrame
+            要寫入的數據框
+        """
+        # 確保輸出目錄存在
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        # 轉置 DataFrame，使指標成為列名，數據成為行
+        df_transposed = df.transpose()
+        
+        # 檢查文件是否存在且是有效的 Excel 文件
+        is_valid_excel = False
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            try:
+                # 嘗試讀取文件的前幾個字節來檢查是否為有效的 Excel 文件
+                with open(file_path, 'rb') as f:
+                    header = f.read(4)
+                    # Excel 文件的魔數是 PK\x03\x04
+                    is_valid_excel = header.startswith(b'PK\x03\x04')
+            except Exception:
+                is_valid_excel = False
+        
+        try:
+            if is_valid_excel:
+                try:
+                    # 嘗試讀取現有的 Excel 文件
+                    book = load_workbook(file_path)
+                    
+                    # 檢查工作表是否存在
+                    if sheet_name in book.sheetnames:
+                        try:
+                            # 如果工作表存在，讀取現有數據
+                            existing_df = pd.read_excel(file_path, sheet_name=sheet_name, index_col=0)
+                            
+                            # 將新數據追加到現有數據後面
+                            combined_df = pd.concat([existing_df, df_transposed], axis=0)
+                            
+                            # 寫入合併後的數據
+                            with pd.ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                                # 寫入合併後的工作表
+                                combined_df.to_excel(writer, sheet_name=sheet_name)
+                        except Exception as e:
+                            print(f"讀取現有工作表時發生錯誤: {e}")
+                            # 如果讀取失敗，直接覆蓋寫入
+                            with pd.ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                                df_transposed.to_excel(writer, sheet_name=sheet_name)
+                    else:
+                        # 如果工作表不存在，直接追加新工作表
+                        with pd.ExcelWriter(file_path, engine='openpyxl', mode='a') as writer:
+                            df_transposed.to_excel(writer, sheet_name=sheet_name)
+                except Exception as e:
+                    print(f"讀取 Excel 文件時發生錯誤: {e}")
+                    # 如果文件損壞，刪除並重新創建
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        print(f"刪除損壞的文件時發生錯誤: {e}")
+                    
+                    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                        df_transposed.to_excel(writer, sheet_name=sheet_name)
+            else:
+                # 如果文件不存在或不是有效的 Excel 文件，則創建新文件
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        print(f"刪除無效的文件時發生錯誤: {e}")
                 
-                # 設定標題列樣式
-                if cell.row == 1:
-                    cell.font = self.header_font
-                    cell.fill = self.header_fill
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    df_transposed.to_excel(writer, sheet_name=sheet_name)
+        except Exception as e:
+            print(f"寫入 Excel 文件時發生錯誤: {e}")
+            # 最後的嘗試：直接覆蓋寫入
+            try:
+                # 確保文件不存在
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        print(f"刪除文件時發生錯誤: {e}")
                 
-                # 自動調整欄寬
-                column_letter = get_column_letter(cell.column)
-                max_length = max(len(str(cell.value)) for cell in worksheet[column_letter])
-                worksheet.column_dimensions[column_letter].width = max_length + 2
-
-    def _create_performance_chart(self, data: pd.DataFrame, results: Dict[str, Any], output_path: str):
-        """創建績效圖表"""
-        plt.figure(figsize=(15, 10))
-        
-        # 繪製累計收益曲線
-        plt.subplot(2, 2, 1)
-        cumulative_returns = (1 + results['daily_returns']).cumprod()
-        plt.plot(cumulative_returns.index, cumulative_returns.values, label='策略收益')
-        plt.title('累計收益曲線')
-        plt.xlabel('日期')
-        plt.ylabel('累計收益')
-        plt.legend()
-        plt.grid(True)
-        
-        # 繪製回撤圖
-        plt.subplot(2, 2, 2)
-        drawdown = results['portfolio'].drawdown()
-        plt.fill_between(drawdown.index, drawdown.values, 0, color='red', alpha=0.3)
-        plt.title('回撤分析')
-        plt.xlabel('日期')
-        plt.ylabel('回撤幅度')
-        plt.grid(True)
-        
-        # 繪製月度收益熱力圖
-        plt.subplot(2, 2, 3)
-        monthly_returns = results['daily_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
-        monthly_returns = monthly_returns.to_frame()
-        monthly_returns.index = monthly_returns.index.strftime('%Y-%m')
-        sns.heatmap(monthly_returns, annot=True, fmt='.2%', cmap='RdYlGn', center=0)
-        plt.title('月度收益熱力圖')
-        
-        # 繪製交易分布圖
-        plt.subplot(2, 2, 4)
-        trades = results['trades']
-        if not trades.empty:
-            sns.histplot(data=trades, x='Return', bins=50)
-            plt.title('交易收益分布')
-            plt.xlabel('收益率')
-            plt.ylabel('頻率')
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_path, 'performance_chart.png'))
-        plt.close()
-
-    def export_all(self, data: pd.DataFrame, results: Dict[str, Any], stats: Dict[str, Any], strategy_params: Any) -> pd.DataFrame:
-        """匯出所有結果"""
-        # 創建績效圖表
-        self._create_performance_chart(data, results, self.output_dir)
-        
-        # 保存統計數據
-        stats_df = self.save_statistics(stats)
-        
-        # 保存到Excel並應用樣式
-        excel_path = os.path.join(self.output_dir, '詳細數據.xlsx')
-        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-            stats_df.to_excel(writer, sheet_name='統計數據')
-            results['trades'].to_excel(writer, sheet_name='交易記錄', index=False)
-            results['daily_returns'].to_frame('每單位收益率').to_excel(writer, sheet_name='單位收益')
-            
-            # 應用Excel樣式
-            workbook = writer.book
-            for worksheet in workbook.worksheets:
-                self._apply_excel_styling(worksheet)
-        
-        return stats_df
-
-    def write_df_to_excel(self, file_path: str, sheet_name: str, df: pd.DataFrame) -> None:
-        """將DataFrame寫入Excel並應用樣式"""
-        if os.path.exists(file_path):
-            with pd.ExcelWriter(file_path, engine='openpyxl', mode='a') as writer:
-                df.to_excel(writer, sheet_name=sheet_name)
-                workbook = writer.book
-                worksheet = workbook[sheet_name]
-                self._apply_excel_styling(worksheet)
-        else:
-            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name=sheet_name)
-                workbook = writer.book
-                worksheet = workbook[sheet_name]
-                self._apply_excel_styling(worksheet)
-
-        
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    df_transposed.to_excel(writer, sheet_name=sheet_name)
+            except Exception as e:
+                print(f"最終嘗試寫入 Excel 文件時發生錯誤: {e}")
+                raise
