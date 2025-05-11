@@ -1,7 +1,7 @@
 import os
-import threading
+import multiprocessing
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 import matplotlib
 matplotlib.use('Agg')  # 設定 matplotlib 使用非互動式後端
@@ -40,8 +40,8 @@ STRATEGY = "SMAS"
 # 移動平均線類型
 MA_TYPES = {
     "SMA": {"settings": ["SMA_05"]},
-    "EMA": {"settings": ["EMA_01", "EMA_02", "EMA_03", "EMA_04", "EMA_05"]},
-    "WMA": {"settings": ["WMA_01", "WMA_02", "WMA_03", "WMA_04", "WMA_05"]}
+    # "EMA": {"settings": ["EMA_01", "EMA_02", "EMA_03", "EMA_04", "EMA_05"]},
+    # "WMA": {"settings": ["WMA_01", "WMA_02", "WMA_03", "WMA_04", "WMA_05"]}
 }
 
 # 策略參數設定
@@ -98,23 +98,23 @@ STRATEGY_PARAMS = {
 }
 
 # 執行緒池大小
-MAX_WORKERS = 16
+MAX_WORKERS = multiprocessing.cpu_count()  # 使用 CPU 核心數
 
-# 線程計數器
-thread_counter = 0
-thread_counter_lock = threading.Lock()
+# 進程計數器
+process_counter = 0
+process_counter_lock = multiprocessing.Lock()
 
-def get_thread_number():
-    global thread_counter
-    with thread_counter_lock:
-        thread_counter = (thread_counter % MAX_WORKERS) + 1
-        return thread_counter
+def get_process_number():
+    global process_counter
+    with process_counter_lock:
+        process_counter = (process_counter % MAX_WORKERS) + 1
+        return process_counter
 
 def process_single_backtest(kline, stock, ma_type, setting, ma_period, slope_period, method, threshold, index):
     try:
         current_time = datetime.now().strftime("%H:%M:%S")
-        thread_id = get_thread_number()
-        tqdm.write(f"[{current_time}] 線程 {thread_id:02d} | 開始回測 {STRATEGY} | 股票:{stock} | MA類型:{ma_type} | 設定:{setting} | 週期:{ma_period} | 斜率區間:{slope_period} | 方法:{method} | 門檻:{threshold}")
+        process_id = get_process_number()
+        tqdm.write(f"[{current_time}] 進程 {process_id:02d} | 開始回測 {STRATEGY} | 股票:{stock} | MA類型:{ma_type} | 設定:{setting} | 週期:{ma_period} | 斜率區間:{slope_period} | 方法:{method} | 門檻:{threshold}")
 
         # 設定輸出路徑
         mode = f"1{str(kline[1])}{str(ma_period)}{str(kline[1])}{str(slope_period)}M{str(method)}T{str(index)}"
@@ -164,9 +164,13 @@ def process_single_backtest(kline, stock, ma_type, setting, ma_period, slope_per
         results = engine.run(signals, freq)
                 
         # 獲取所有統計數據、創建結果匯出器並匯出所有結果
+        start_time = datetime.now()
         all_stats = engine.get_all_statistics()
         exporter = ResultExporter(single_output_path)
         result = exporter.export_all(data, results, all_stats, strategy_params)
+        end_time = datetime.now()
+        duration = end_time - start_time
+        tqdm.write(f"測試完成時間: {duration}")
         
         # 將結果匯出至總表
         exporter.write_df_to_excel(all_output_path, mode, result)
@@ -176,8 +180,8 @@ def process_single_backtest(kline, stock, ma_type, setting, ma_period, slope_per
         
     except Exception as e:
         current_time = datetime.now().strftime("%H:%M:%S")
-        thread_id = get_thread_number()
-        tqdm.write(f"[{current_time}] 線程 {thread_id:02d} | 錯誤: {str(e)}")
+        process_id = get_process_number()
+        tqdm.write(f"[{current_time}] 進程 {process_id:02d} | 錯誤: {str(e)}")
         logging.error(f"回測過程發生錯誤: {str(e)}", exc_info=True)
         plt.close('all')
 
@@ -207,14 +211,14 @@ if __name__ == "__main__":
         start_time = datetime.now()
         tqdm.write(f"開始回測時間: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         tqdm.write(f"總共 {len(MA_TYPES)} 種 MA 類型，{sum(len(ma_type['settings']) for ma_type in MA_TYPES.values())} 種設定組合")
-        tqdm.write(f"使用 {MAX_WORKERS} 個執行緒進行並行處理\n")
+        tqdm.write(f"使用 {MAX_WORKERS} 個進程進行並行處理\n")
         
         # 計算總任務數（MA類型 * 設定數）
         total_settings = sum(len(ma_type['settings']) for ma_type in MA_TYPES.values())
         
         # 先創建整體進度條
         with tqdm(total=total_settings, desc="整體進度", position=0, ncols=100, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 futures = []
                 
                 # 提交所有任務
