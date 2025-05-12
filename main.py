@@ -40,8 +40,8 @@ STRATEGY = "SMAS"
 # 移動平均線類型
 MA_TYPES = {
     "SMA": {"settings": ["SMA_05"]},
-    # "EMA": {"settings": ["EMA_01", "EMA_02", "EMA_03", "EMA_04", "EMA_05"]},
-    # "WMA": {"settings": ["WMA_01", "WMA_02", "WMA_03", "WMA_04", "WMA_05"]}
+    "EMA": {"settings": ["EMA_01", "EMA_02", "EMA_03", "EMA_04", "EMA_05"]},
+    "WMA": {"settings": ["WMA_01", "WMA_02", "WMA_03", "WMA_04", "WMA_05"]}
 }
 
 # 策略參數設定
@@ -102,19 +102,17 @@ MAX_WORKERS = multiprocessing.cpu_count()  # 使用 CPU 核心數
 
 # 進程計數器
 process_counter = 0
-process_counter_lock = multiprocessing.Lock()
 
 def get_process_number():
+    """獲取當前進程的編號"""
     global process_counter
-    with process_counter_lock:
-        process_counter = (process_counter % MAX_WORKERS) + 1
-        return process_counter
+    process_counter += 1
+    return process_counter
 
-def process_single_backtest(kline, stock, ma_type, setting, ma_period, slope_period, method, threshold, index):
+def process_single_backtest(kline, stock, ma_type, setting, ma_period, slope_period, method, threshold, index, process_id, tasks, total_tasks):
     try:
         current_time = datetime.now().strftime("%H:%M:%S")
-        process_id = get_process_number()
-        tqdm.write(f"[{current_time}] 進程 {process_id:02d} | 開始回測 {STRATEGY} | 股票:{stock} | MA類型:{ma_type} | 設定:{setting} | 週期:{ma_period} | 斜率區間:{slope_period} | 方法:{method} | 門檻:{threshold}")
+        tqdm.write(f"[{current_time}] 目前進度: {tasks} / {total_tasks} | 股票:{stock} | MA類型:{ma_type} | 設定:{setting} | 週期:{ma_period} | 斜率區間:{slope_period} | 方法:{method} | 門檻:{threshold}")
 
         # 設定輸出路徑
         mode = f"1{str(kline[1])}{str(ma_period)}{str(kline[1])}{str(slope_period)}M{str(method)}T{str(index)}"
@@ -164,73 +162,79 @@ def process_single_backtest(kline, stock, ma_type, setting, ma_period, slope_per
         results = engine.run(signals, freq)
                 
         # 獲取所有統計數據、創建結果匯出器並匯出所有結果
-        start_time = datetime.now()
         all_stats = engine.get_all_statistics()
         exporter = ResultExporter(single_output_path)
         result = exporter.export_all(data, results, all_stats, strategy_params)
-        end_time = datetime.now()
-        duration = end_time - start_time
-        tqdm.write(f"測試完成時間: {duration}")
         
         # 將結果匯出至總表
         exporter.write_df_to_excel(all_output_path, mode, result)
         
         # 清理 matplotlib 圖形
         plt.close('all')
+        return True
         
     except Exception as e:
         current_time = datetime.now().strftime("%H:%M:%S")
-        process_id = get_process_number()
-        tqdm.write(f"[{current_time}] 進程 {process_id:02d} | 錯誤: {str(e)}")
+        error_msg = f"[{current_time}] 進程 {process_id:03d} | 錯誤: {str(e)}"
+        tqdm.write(error_msg)
         logging.error(f"回測過程發生錯誤: {str(e)}", exc_info=True)
         plt.close('all')
+        return False
 
 def main(ma_type, setting):
-    setting_key = setting[4:]  # 取得設定編號
-    params = STRATEGY_PARAMS[setting_key]
-    
-    # 計算當前設定的總任務數
-    total_tasks = len(STOCK) * len(params["ma_period"]) * len(params["slope_period"]) * len(params["method"]) * len(params["threshold"][params["method"][0]])
-    
-    # 使用 tqdm 顯示當前設定的進度
-    with tqdm(total=total_tasks, desc=f"回測進度 ({ma_type} - {setting})", ncols=100, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+    try:
+        setting_key = setting[4:]  # 取得設定編號
+        params = STRATEGY_PARAMS[setting_key]
+        
+        # 計算當前設定的總任務數
+        total_tasks = len(STOCK) * len(params["ma_period"]) * len(params["slope_period"]) * len(params["method"]) * len(params["threshold"][params["method"][0]])
+        tasks = 0
+        # 使用 tqdm 顯示當前設定的進度
         for stock in STOCK:
             for ma_period in params["ma_period"]:
                 for slope_period in params["slope_period"]:
                     for method in params["method"]:
                         for index, threshold in enumerate(params["threshold"][method]):
-                            process_single_backtest(params["Kline"], stock, ma_type, setting, ma_period, slope_period, method, threshold, index)
-                            pbar.update(1)
-    
-    # 處理總表
-    all_output_path = f"output/{STRATEGY}/{setting}/ETF0050_{STRATEGY}_{setting}.xlsx"
-    process_excel_file(all_output_path)
+                            try:
+                                process_id = get_process_number()
+                                process_single_backtest(params["Kline"], stock, ma_type, setting, ma_period, slope_period, method, threshold, index, process_id, tasks, total_tasks)
+                            except Exception as e:
+                                logging.error(f"處理任務時發生錯誤: {str(e)}", exc_info=True)
+                            finally:
+                                tasks += 1
+
+        # 處理總表
+        try:
+            all_output_path = f"output/{STRATEGY}/{setting}/ETF0050_{STRATEGY}_{setting}.xlsx"
+            process_excel_file(all_output_path)
+        except Exception as e:
+            logging.error(f"處理總表時發生錯誤: {str(e)}", exc_info=True)
+            
+    except Exception as e:
+        logging.error(f"執行設定時發生錯誤: {str(e)}", exc_info=True)
 
 if __name__ == "__main__":
     try:
         start_time = datetime.now()
         tqdm.write(f"開始回測時間: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         tqdm.write(f"總共 {len(MA_TYPES)} 種 MA 類型，{sum(len(ma_type['settings']) for ma_type in MA_TYPES.values())} 種設定組合")
-        tqdm.write(f"使用 {MAX_WORKERS} 個進程進行並行處理\n")
-        
-        # 計算總任務數（MA類型 * 設定數）
-        total_settings = sum(len(ma_type['settings']) for ma_type in MA_TYPES.values())
-        
+                
         # 先創建整體進度條
-        with tqdm(total=total_settings, desc="整體進度", position=0, ncols=100, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
-            with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = []
-                
-                # 提交所有任務
-                for ma_type, ma_info in MA_TYPES.items():
-                    for setting in ma_info["settings"]:
-                        future = executor.submit(main, ma_type, setting)
-                        futures.append(future)
-                
-                # 等待所有任務完成並更新進度
-                for future in futures:
+        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = []
+            
+            # 提交所有任務
+            for ma_type, ma_info in MA_TYPES.items():
+                for setting in ma_info["settings"]:
+                    future = executor.submit(main, ma_type, setting)
+                    futures.append(future)
+            
+            # 等待所有任務完成並更新進度
+            for future in futures:
+                try:
                     future.result()
-                    pbar.update(1)
+                except Exception as e:
+                    logging.error(f"處理進程結果時發生錯誤: {str(e)}", exc_info=True)
         
         end_time = datetime.now()
         duration = end_time - start_time
@@ -239,3 +243,4 @@ if __name__ == "__main__":
         
     except Exception as e:
         logging.error(f"程式執行發生錯誤: {str(e)}", exc_info=True)
+        tqdm.write(f"程式發生錯誤但繼續執行: {str(e)}")
