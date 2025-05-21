@@ -222,7 +222,7 @@ class ResultExporter:
         # 價格和移動平均線圖
         plt.figure(figsize=(15, 6))
         # data['close'].rolling(window=strategy_params.period).mean().plot(label='5日 SMA')
-        data['close'].plot(label='收盤價', color='green')
+        data['close'].plot(label='收盤價', color='black')
         short_ma = data['close'].rolling(window=strategy_params.short_period).mean()
         mid_ma = data['close'].rolling(window=strategy_params.mid_period).mean()
         long_ma = data['close'].rolling(window=strategy_params.long_period).mean()
