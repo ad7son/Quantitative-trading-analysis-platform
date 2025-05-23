@@ -220,20 +220,34 @@ class ResultExporter:
             策略參數
         """
         # 價格和移動平均線圖
-        plt.figure(figsize=(15, 6))
-        # data['close'].rolling(window=strategy_params.period).mean().plot(label='5日 SMA')
+        plt.figure(figsize=(20, 10))
         data['close'].plot(label='收盤價', color='black')
-        short_ma = data['close'].rolling(window=strategy_params.short_period).mean()
-        mid_ma = data['close'].rolling(window=strategy_params.mid_period).mean()
-        long_ma = data['close'].rolling(window=strategy_params.long_period).mean()
-        short_ma.plot(label=f'{strategy_params.short_period}日 短線', color='blue')
-        mid_ma.plot(label=f'{strategy_params.mid_period}日 中線', color='green')
-        long_ma.plot(label=f'{strategy_params.long_period}日 慢線', color='red')
+
+        for p in strategy_params.short_periods:
+            data['close'].ewm(span=p, adjust=False).mean().plot(label=f'Short {p}', linewidth=0.5, color='blue')
+        for p in strategy_params.long_periods:
+            data['close'].ewm(span=p, adjust=False).mean().plot(label=f'Long {p}', linewidth=0.5, color='red')
+
         plt.title('價格和移動平均線')
         plt.legend()
         plt.savefig(f'{self.output_dir}/價格和移動平均線.png')
         plt.close()
         
+        # # 價格和移動平均線圖
+        # plt.figure(figsize=(15, 6))
+        # # data['close'].rolling(window=strategy_params.period).mean().plot(label='5日 SMA')
+        # data['close'].plot(label='收盤價', color='black')
+        # short_ma = data['close'].rolling(window=strategy_params.short_period).mean()
+        # mid_ma = data['close'].rolling(window=strategy_params.mid_period).mean()
+        # long_ma = data['close'].rolling(window=strategy_params.long_period).mean()
+        # short_ma.plot(label=f'{strategy_params.short_period}日 短線', color='blue')
+        # mid_ma.plot(label=f'{strategy_params.mid_period}日 中線', color='green')
+        # long_ma.plot(label=f'{strategy_params.long_period}日 慢線', color='red')
+        # plt.title('價格和移動平均線')
+        # plt.legend()
+        # plt.savefig(f'{self.output_dir}/價格和移動平均線.png')
+        # plt.close()
+
         # 投資組合價值圖
         plt.figure(figsize=(15, 6))
         results['portfolio'].value().plot()
